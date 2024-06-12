@@ -1,7 +1,7 @@
 import { GetServerSideProps } from "next";
+import Link from 'next/link';
 import axios from "axios";
-import { useState, useEffect, useRef, useCallback } from "react";
-import { ParsedUrlQuery } from "querystring";
+import { useState, useEffect, useRef } from "react";
 
 interface Comment {
   pk: string;
@@ -17,40 +17,34 @@ interface Comment {
 interface Props {
   initialComments: Comment[];
   creator_id: string;
-  initialPage: number;
 }
 
-interface Params extends ParsedUrlQuery {
-  creator_id: string;
-}
-
-const CommentsPage = ({ initialComments, creator_id, initialPage }: Props) => {
+const CommentsStreamPage = ({ initialComments, creator_id }: Props) => {
   const [comments, setComments] = useState(initialComments);
-  const [page, setPage] = useState(initialPage);
-  const [loading, setLoading] = useState(false);
   const newCommentsRef = useRef<Set<string>>(new Set());
-  const observerRef = useRef<IntersectionObserver | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const fetchComments = async (pageNum: number) => {
+  const fetchComments = async () => {
     setLoading(true);
     try {
       const response = await axios.get(
-        `http://localhost:3000/api/comments/creator/${creator_id}?page=${pageNum}&limit=10`
+        `http://localhost:3000/api/comments/creator/${creator_id}?page=1&limit=50`
       );
       const newComments = response.data;
-      newComments.forEach((comment: Comment) => newCommentsRef.current.add(comment.pk));
-      setComments((prev) => [...prev, ...newComments]);
+      newComments.forEach((comment: Comment) =>
+        newCommentsRef.current.add(comment.pk)
+      );
+      setComments(newComments);
     } catch (error) {
       console.error("Failed to fetch comments:", error);
     }
     setLoading(false);
   };
 
-  const loadMoreComments = useCallback(() => {
-    const nextPage = page + 1;
-    setPage(nextPage);
-    fetchComments(nextPage);
-  }, [page]);
+  useEffect(() => {
+    const interval = setInterval(fetchComments, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (newCommentsRef.current.size > 0) {
@@ -60,29 +54,6 @@ const CommentsPage = ({ initialComments, creator_id, initialPage }: Props) => {
       return () => clearTimeout(timer);
     }
   }, [comments]);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !loading) {
-          loadMoreComments();
-        }
-      },
-      { threshold: 1.0 }
-    );
-    observerRef.current = observer;
-
-    const target = document.querySelector('#load-more-trigger');
-    if (target) {
-      observer.observe(target);
-    }
-
-    return () => {
-      if (observerRef.current && target) {
-        observerRef.current.unobserve(target);
-      }
-    };
-  }, [loadMoreComments, loading]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text).then(
@@ -95,14 +66,46 @@ const CommentsPage = ({ initialComments, creator_id, initialPage }: Props) => {
     );
   };
 
+  const timeAgo = (dateString: string) => {
+    const now = new Date();
+    const past = new Date(dateString);
+    const diff = now.getTime() - past.getTime();
+
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    const weeks = Math.floor(days / 7);
+    const months = Math.floor(days / 30);
+    const years = Math.floor(days / 365);
+
+    if (years > 0) {
+      return `${years} year${years > 1 ? "s" : ""} ago`;
+    } else if (months > 0) {
+      return `${months} month${months > 1 ? "s" : ""} ago`;
+    } else if (weeks > 0) {
+      return `${weeks} week${weeks > 1 ? "s" : ""} ago`;
+    } else if (days > 0) {
+      return `${days} day${days > 1 ? "s" : ""} ago`;
+    } else if (hours > 0) {
+      return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+    } else if (minutes > 0) {
+      return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
+    } else {
+      return `${seconds} second${seconds > 1 ? "s" : ""} ago`;
+    }
+  };
+
   return (
     <div>
-      <h1>Comments for Creator {creator_id}</h1>
+      <h1>Comments Stream for Creator {creator_id}</h1>
       <div className="comments-list">
         {comments.map((comment) => (
           <div
             key={comment.pk}
-            className={`comment-card ${newCommentsRef.current.has(comment.pk) ? 'new-comment' : ''}`}
+            className={`comment-card ${
+              newCommentsRef.current.has(comment.pk) ? "new-comment" : ""
+            }`}
           >
             <img
               src={comment.user.profile_pic_url}
@@ -111,21 +114,28 @@ const CommentsPage = ({ initialComments, creator_id, initialPage }: Props) => {
             />
             <div>
               <div className="username-container">
+              <Link href={`/user/comments/${comment.user_id}`}>
                 <h3>{comment.user.username}</h3>
-                <button onClick={() => copyToClipboard(comment.user.username)} className="copy-button">
+              </Link>
+                <button
+                  onClick={() => copyToClipboard(comment.user.username)}
+                  className="copy-button"
+                >
                   Copy
                 </button>
               </div>
               <p>{comment.text}</p>
               <small>
-                {timeAgo(new Date(comment.created_at*1000).toISOString())}
+                {timeAgo(
+                  new Date(Number(comment.created_at) * 1000).toISOString()
+                )}
               </small>
+          
             </div>
           </div>
         ))}
       </div>
       {loading && <p>Loading...</p>}
-      <div id="load-more-trigger" style={{ height: 1 }}></div>
 
       <style jsx>{`
         .comments-list {
@@ -143,18 +153,20 @@ const CommentsPage = ({ initialComments, creator_id, initialPage }: Props) => {
           gap: 10px;
           transition: background-color 3s;
         }
+
         .new-comment {
-          background-color: #e0ffe0;
+          background-color: #bf2c8e;
           animation: fadeOut 3s forwards;
         }
         @keyframes fadeOut {
           0% {
-            background-color: #e0ffe0;
+            background-color: #9d338f;
           }
           100% {
             background-color: #120c18;
           }
         }
+
         .avatar {
           width: 50px;
           height: 50px;
@@ -180,24 +192,36 @@ const CommentsPage = ({ initialComments, creator_id, initialPage }: Props) => {
         button:disabled {
           opacity: 0.5;
         }
+        a {
+          display: block;
+          margin-top: 10px;
+          color: blue;
+          text-decoration: underline;
+        }
       `}</style>
     </div>
   );
 };
 
-export const getServerSideProps: GetServerSideProps<Props, Params> = async (context) => {
+import { ParsedUrlQuery } from "querystring";
+
+interface Params extends ParsedUrlQuery {
+  creator_id: string;
+}
+
+export const getServerSideProps: GetServerSideProps<Props, Params> = async (
+  context
+) => {
   const { creator_id } = context.params as Params;
-  const page = 1;
 
   try {
     const response = await axios.get(
-      `http://localhost:3000/api/comments/creator/${creator_id}?page=${page}&limit=10`
+      `http://localhost:3000/api/comments/creator/${creator_id}?page=1&limit=50`
     );
     return {
       props: {
         initialComments: response.data,
         creator_id,
-        initialPage: page,
       },
     };
   } catch (error) {
@@ -205,40 +229,10 @@ export const getServerSideProps: GetServerSideProps<Props, Params> = async (cont
       props: {
         initialComments: [],
         creator_id,
-        initialPage: page,
       },
     };
   }
 };
 
-export default CommentsPage;
+export default CommentsStreamPage;
 
-function timeAgo(dateString: string) {
-  const now = new Date();
-  const past = new Date(dateString);
-  const diff = now.getTime() - past.getTime();
-
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-  const weeks = Math.floor(days / 7);
-  const months = Math.floor(days / 30);
-  const years = Math.floor(days / 365);
-
-  if (years > 0) {
-    return `${years} year${years > 1 ? "s" : ""} ago`;
-  } else if (months > 0) {
-    return `${months} month${months > 1 ? "s" : ""} ago`;
-  } else if (weeks > 0) {
-    return `${weeks} week${weeks > 1 ? "s" : ""} ago`;
-  } else if (days > 0) {
-    return `${days} day${days > 1 ? "s" : ""} ago`;
-  } else if (hours > 0) {
-    return `${hours} hour${hours > 1 ? "s" : ""} ago`;
-  } else if (minutes > 0) {
-    return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
-  } else {
-    return `${seconds} second${seconds > 1 ? "s" : ""} ago`;
-  }
-}

@@ -1,4 +1,5 @@
 import { GetServerSideProps } from "next";
+import Link from "next/link";
 import axios from "axios";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { ParsedUrlQuery } from "querystring";
@@ -104,14 +105,16 @@ const CommentsPage = ({ initialComments, creator_id, initialPage }: Props) => {
             key={comment.pk}
             className={`comment-card ${newCommentsRef.current.has(comment.pk) ? 'new-comment' : ''}`}
           >
-            <img
+            {/* <img
               src={comment.user.profile_pic_url}
               alt={comment.user.username}
               className="avatar"
-            />
+            /> */}
             <div>
               <div className="username-container">
-                <h3>{comment.user.username}</h3>
+                <Link href={`/user/comments/${comment.user_id}`}>
+                  <h3>{comment.user.username}</h3> 
+                </Link>
                 <button onClick={() => copyToClipboard(comment.user.username)} className="copy-button">
                   Copy
                 </button>
@@ -125,7 +128,7 @@ const CommentsPage = ({ initialComments, creator_id, initialPage }: Props) => {
         ))}
       </div>
       {loading && <p>Loading...</p>}
-      <div id="load-more-trigger" style={{ height: 1 }}></div>
+      <div id="load-more-trigger" style={{ height: 1 }}>load more </div>
 
       <style jsx>{`
         .comments-list {
@@ -144,12 +147,12 @@ const CommentsPage = ({ initialComments, creator_id, initialPage }: Props) => {
           transition: background-color 3s;
         }
         .new-comment {
-          background-color: #e0ffe0;
+          background-color: #860045;
           animation: fadeOut 3s forwards;
         }
         @keyframes fadeOut {
           0% {
-            background-color: #e0ffe0;
+            background-color: #860045;
           }
           100% {
             background-color: #120c18;
